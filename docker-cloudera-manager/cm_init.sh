@@ -60,6 +60,7 @@ echo "[INFO] Environment variables : OOZIE_DB_PASSWORD=$OOZIE_DB_PASSWORD"
 setenforce 0
 
 # Set up NTP
+echo "server $NTP_SERVER iburst" >> /etc/ntp.conf
 ntpdate $NTP_SERVER
 /etc/init.d/ntpd start
 

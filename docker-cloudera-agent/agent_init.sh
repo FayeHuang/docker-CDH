@@ -23,6 +23,7 @@ echo "[INFO] Environment variables : NTP_SERVER=$NTP_SERVER, SERF_JOIN_IP=$SERF_
 setenforce 0
 
 # Set up NTP
+echo "server $NTP_SERVER iburst" >> /etc/ntp.conf
 ntpdate $NTP_SERVER
 /etc/init.d/ntpd start
 
