@@ -121,12 +121,13 @@ def update_custom_config(api, cluster, blueprint):
         service_type = service.type
         service_config = CDH_DEFINE[service_type]['config']
         if service.type == "HDFS":
-            if len(service.get_all_roles()) < 3:
-                replications = 1
-            elif len(service.get_all_roles()) < 5:
+            dn_amount = len(service.get_all_roles())
+            if dn_amount > 5:
+                replications = 3
+            elif dn_amount <= 5 and dn_amount >= 3:
                 replications = 2
             else:
-                replications = 3
+                replications = 1
             service_config['dfs_replication'] = replications
         service.update_config(service_config)
         for role_type in blueprint[service_type]['roles'].keys():
