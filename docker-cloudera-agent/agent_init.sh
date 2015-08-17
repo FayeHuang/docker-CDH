@@ -9,7 +9,7 @@ do
     time_s=$((time_s+1))
 done
 #
-if [[ -z "$NTP_SERVER" && -z "$SERF_JOIN_IP" && -z "$CM_SERVER" ]];
+if [[ -z "$NTP_SERVER" || -z "$SERF_JOIN_IP" || -z "$CM_SERVER" ]];
 then
     echo "[ERROR] Timeout, can not get environment variable NTP_SERVER or SERF_JOIN_IP or CM_SERVER"
     exit

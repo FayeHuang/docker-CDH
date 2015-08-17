@@ -10,7 +10,7 @@ do
     time_s=$((time_s+1))
 done
 #
-if [[ -z "$NTP_SERVER" && -z "$HIVE_DB_CREATE" && -z "$OOZIE_DB_CREATE" && -z "$CM_SERVER" ]];
+if [[ -z "$NTP_SERVER" || -z "$HIVE_DB_CREATE" || -z "$OOZIE_DB_CREATE" || -z "$CM_SERVER" ]];
 then
     echo "[ERROR] Timeout, can not get environment variable NTP_SERVER or HIVE_DB_CREATE or OOZIE_DB_CREATE or CM_SERVER"
     exit
@@ -27,7 +27,7 @@ then
         time_s=$((time_s+1))
     done
     #
-    if [[ -z "$HIVE_METASTORE_HOST" && -z "$HIVE_DB_PASSWORD" ]];
+    if [[ -z "$HIVE_METASTORE_HOST" || -z "$HIVE_DB_PASSWORD" ]];
     then
         echo "[Error] Timeout, can not get environment variable HIVE_METASTORE_HOST or HIVE_DB_PASSWORD"
         exit
@@ -45,7 +45,7 @@ then
         time_s=$((time_s+1))
     done
     #
-    if [[ -n "$HIVE_DB_PASSWORD" ]];
+    if [[ -z "$OOZIE_DB_PASSWORD" ]];
     then
         echo "[Error] Timeout, can not get environment variable OOZIE_DB_PASSWORD"
         exit
