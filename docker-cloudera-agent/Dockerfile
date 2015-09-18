@@ -1,7 +1,7 @@
 FROM fayehuang/centos-serf
 MAINTAINER FayeHuang
 #
-WORKDIR /root/cm-agent
+WORKDIR /docker_init/cm-agent
 ENV mysql_password=changeme
 RUN yum install -y ntp mysql-connector-java && yum clean all
 RUN mkdir -p /usr/lib/hive/lib/ && ln -s /usr/share/java/mysql-connector-java.jar /usr/lib/hive/lib/mysql-connector-java.jar
@@ -30,7 +30,10 @@ RUN yum install -y cloudera-manager-agent cloudera-manager-daemons oracle-j2sdk1
 #
 COPY agent_init.sh agent_init.sh
 RUN chmod +x agent_init.sh
+ENV SERF_HOME /docker_init/serf
+COPY serf_init.sh $SERF_HOME/bin/serf_init.sh
+RUN chmod +x $SERF_HOME/bin/serf_init.sh
 
 COPY supervisord.conf /etc/supervisord.conf
-EXPOSE 22 50070 8088 8042 19888
+EXPOSE 22 50070 8088 8042 19888 3000
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]

@@ -1,9 +1,11 @@
 FROM fayehuang/centos-serf
 MAINTAINER FayeHuang
 #
-WORKDIR /root/cm
+WORKDIR /docker_init/cm
+RUN mkdir cm
+#
 ENV mysql_password=changeme
-RUN yum install -y ntp python-pip mysql-server mysql-connector-java && yum clean all
+RUN yum install -y ntp mysql-server mysql-connector-java && yum clean all
 RUN pip install cm_api
 RUN echo -e "\nY\n$mysql_password\n$mysql_password\nY\nn\nY\nY\n" > mysql_secure_install_answer
 #
@@ -19,10 +21,13 @@ RUN ln -s /usr/share/java/mysql-connector-java.jar /usr/lib/hive/lib/mysql-conne
 RUN sed -i.bak s/^.*"hive-txn-schema-0.13.0.mysql.sql".*/"SOURCE \/usr\/lib\/hive\/scripts\/metastore\/upgrade\/mysql\/hive-txn-schema-0.13.0.mysql.sql;"/ /usr/lib/hive/scripts/metastore/upgrade/mysql/hive-schema-1.1.0.mysql.sql
 #
 RUN yum install -y cloudera-manager-agent cloudera-manager-daemons cloudera-manager-server cloudera-manager-server-db-2 && yum clean all
-COPY cm_init.sh cm_init.sh
+COPY cm_init.sh cm_init.sh 
 RUN chmod +x cm_init.sh
+ENV SERF_HOME /docker_init/serf
+COPY serf_init.sh $SERF_HOME/bin/serf_init.sh 
+RUN chmod +x $SERF_HOME/bin/serf_init.sh
 COPY deployCDH.py deployCDH.py
 
 COPY supervisord.conf /etc/supervisord.conf
-EXPOSE 22 7180
+EXPOSE 22 7180 3000
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]

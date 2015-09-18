@@ -11,13 +11,18 @@ from cm_api.endpoints.role_config_groups import get_role_config_group
 
 # cm info
 CONFIG = ConfigParser.ConfigParser()
-CONFIG.read("cm_service.ini")
+CONFIG.read("install.ini")
 CM_HOST = CONFIG.get("CM", "cm.host")
 CM_USERNAME = CONFIG.get("CM", "cm.username")
 CM_PASSWORD = CONFIG.get("CM", "cm.password")
 ACTIVITYMONITOR_DB_PASSWORD = CONFIG.get("CM", "ACTIVITYMONITOR.db.password")
 NAVIGATOR_DB_PASSWORD = CONFIG.get("CM", "NAVIGATOR.db.password")
 REPORTSMANAGER_DB_PASSWORD = CONFIG.get("CM", "REPORTSMANAGER.db.password")
+CLUSTER_NODE_COUNT = CONFIG.get("Cluster", "cluster.node.count")
+CLUSTER_NAME = CONFIG.get("Cluster", "cluster.name")
+CLUSTER_VERSION = CONFIG.get("Cluster", "cluster.version")
+
+
 
 # service & role config
 HADOOP_DATA_DIR_PREFIX = "/hadoop"
@@ -60,31 +65,35 @@ ZOOKEEPER_ROLE_CONFIG = {
 # service & role type define
 CDH_DEFINE = {
     "ZOOKEEPER": { "config": ZOOKEEPER_SERVICE_CONFIG,
-                   "cm_define": "ZOOKEEPER",
-                   "roles": { "zk": { "cm_define": "SERVER", "config":ZOOKEEPER_ROLE_CONFIG, "hosts":[] } },
+                   "roles": { "SERVER": { "config":ZOOKEEPER_ROLE_CONFIG } },
                  },
     "HDFS": { "config": HDFS_SERVICE_CONFIG,
-              "cm_define" : "HDFS",
-              "roles":  { "nn": { "cm_define": "NAMENODE", "config": HDFS_NN_CONFIG, "hosts":[] },
-                          "dn": { "cm_define": "DATANODE", "config": HDFS_DN_CONFIG, "hosts":[] },
-                          "snn": { "cm_define": "SECONDARYNAMENODE", "config": HDFS_SNN_CONFIG, "hosts":[] },
-                          "hdfs-gateway": { "cm_define": "GATEWAY", "config": HDFS_GATEWAY_CONFIG, "hosts": [] }
+              "roles":  { "NAMENODE": { "config": HDFS_NN_CONFIG },
+                          "DATANODE": { "config": HDFS_DN_CONFIG },
+                          "SECONDARYNAMENODE": { "config": HDFS_SNN_CONFIG },
+                          "GATEWAY": { "config": HDFS_GATEWAY_CONFIG }
                         },
             },
     "YARN": { "config": YARN_SERVICE_CONFIG,
-              "cm_define" : "YARN",
-              "roles": { "rm": { "cm_define": "RESOURCEMANAGER", "config": YARN_RM_CONFIG, "hosts":[] },
-                         "nm": { "cm_define": "NODEMANAGER", "config": YARN_NM_CONFIG, "hosts":[] },
-                         "jhs": { "cm_define": "JOBHISTORY", "config": YARN_JHS_CONFIG, "hosts":[] },
-                         "yarn-gateway": { "cm_define": "GATEWAY", "config": YARN_GATEWAY_CONFIG, "hosts": [] }
+              "roles": { "RESOURCEMANAGER": { "config": YARN_RM_CONFIG },
+                         "NODEMANAGER": { "config": YARN_NM_CONFIG },
+                         "JOBHISTORY": { "config": YARN_JHS_CONFIG },
+                         "GATEWAY": { "config": YARN_GATEWAY_CONFIG }
                        },
             },
 }
 
 
-def init_cluster(api, cluster_name, cluster_full_version):
+def init_cluster(api, cluster_name, cluster_full_version, cluster_node_count):
     cluster = api.create_cluster(cluster_name, fullVersion=cluster_full_version)
     cluster_hosts = list()
+    wait_for_nodes = True
+    while wait_for_nodes:
+        if len(api.get_all_hosts()) < int(cluster_node_count):
+            time.sleep(1)
+            print("wait for nodes, slepp 1s.")
+        else:
+            wait_for_nodes = False
     for host in api.get_all_hosts():
         cluster_hosts.append(host.hostname)
     cluster.add_hosts(cluster_hosts)
@@ -92,36 +101,29 @@ def init_cluster(api, cluster_name, cluster_full_version):
 
 
 def assign_roles(api, cluster):
-    blueprint = {}
-    for host in api.get_all_hosts():
-        hostname = host.hostname
-        for service_type, service_define in CDH_DEFINE.items():
-            for role_type, role_define in service_define['roles'].items():
-                if hostname.startswith(role_type):
-
-                    if not blueprint.has_key(service_type):
-                        blueprint[service_type] = { 'roles': {} }
-                        cm_service_type = CDH_DEFINE[service_type]['cm_define']
-                        service = cluster.create_service(service_type, cm_service_type)
-                    else:
-                        service = cluster.get_service(service_type)
-                    #
-                    if not blueprint[service_type]['roles'].has_key(role_type):
-                        blueprint[service_type]['roles'][role_type] = { 'hosts': [] }
-                    blueprint[service_type]['roles'][role_type]['hosts'].append(hostname)
-                    cm_role_type = CDH_DEFINE[service_type]['roles'][role_type]['cm_define']
-                    # hostanem = dn1.lab.com
-                    role_name = hostname.split('.')[0]
-                    service.create_role(role_name, cm_role_type, hostname)
-    return blueprint
+    p = subprocess.Popen('serf members', stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+    ( stdout, stderr ) = p.communicate()
+    for member in stdout.strip().split('\n'):
+        # node5.faye.local   172.17.3.165:7946  alive  role=YARN-NODEMANAGER
+        hostname = member.split()[0]
+        role_install = member.split()[3].split('role=')[1].strip()
+        service_type = role_install.split('-')[0]
+        role_type = role_install.split('-')[1]
+        if service_type != "CM":
+            try:
+                service = cluster.get_service(name=service_type)
+            except:
+                service = cluster.create_service(service_type, service_type)
+            role_name = role_type+'_'+hostname.split('.')[0]
+            role = service.create_role(role_name, role_type, hostname)
+    return True
 
 
-def update_custom_config(api, cluster, blueprint):
+def update_custom_config(api, cluster):
     for service in cluster.get_all_services():
-        service_type = service.type
-        service_config = CDH_DEFINE[service_type]['config']
+        service_config = CDH_DEFINE[service.type]['config']
         if service.type == "HDFS":
-            dn_amount = len(service.get_all_roles())
+            dn_amount = len(service.get_roles_by_type('DATANODE'))
             if dn_amount > 5:
                 replications = 3
             elif dn_amount <= 5 and dn_amount >= 3:
@@ -130,13 +132,14 @@ def update_custom_config(api, cluster, blueprint):
                 replications = 1
             service_config['dfs_replication'] = replications
         service.update_config(service_config)
-        for role_type in blueprint[service_type]['roles'].keys():
-            cm_role_type = CDH_DEFINE[service_type]['roles'][role_type]['cm_define']
-            role = service.get_roles_by_type(cm_role_type)[0]
-            role_config = CDH_DEFINE[service_type]['roles'][role_type]['config']
-            role_group = role.roleConfigGroupRef
-            role_group_config = get_role_config_group(api, service_type, role_group.roleConfigGroupName, cluster.name)
-            role_group_config.update_config(role_config)
+        role_type_config_synced = []
+        for role in service.get_all_roles():
+            if role.type not in role_type_config_synced:
+                role_config = CDH_DEFINE[service.type]['roles'][role.type]['config']
+                role_group = role.roleConfigGroupRef
+                role_group_config = get_role_config_group(api, service.type, role_group.roleConfigGroupName, cluster.name)
+                role_group_config.update_config(role_config)
+                role_type_config_synced.append(role.type)
     return True
 
 
@@ -220,34 +223,19 @@ def deploy_management(manager, mgmt_servicename, amon_role_name, apub_role_name,
 
 ### Main function ###
 def main():
-    # # wait for cm api ready ...
-    print("[INFO] wait for cm api ready")
-    connect_ok = False
-    while not connect_ok:
-         cmd = "curl -u "+CM_USERNAME+":"+CM_PASSWORD+" 'http://"+CM_HOST+":7180/api/v10/clusters'"
-         p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
-         ( stdout, stderr ) = p.communicate()
-         if stdout:
-             connect_ok = True
-         else:
-             print("sleep 5s")
-             time.sleep(5)
     # connect cm api
     api = ApiResource(CM_HOST, 7180, username=CM_USERNAME, password=CM_PASSWORD)
-    print(len(api.get_all_hosts()))
     manager = api.get_cloudera_manager()
     # no need to update cm config
     #manager.update_config(cm_host)
     print("[INFO] Connected to CM host on " + CM_HOST)
 
     # create cluster object
-    cluster_name = "TTT"
-    cluster_full_version = "5.4.4"
     try:
-        cluster = api.get_cluster(name=cluster_name)
+        cluster = api.get_cluster(name=CLUSTER_NAME)
     except:
-        cluster = init_cluster(api, cluster_name, cluster_full_version)
-    print("[INFO] Initialized cluster " + cluster_name + " which uses CDH version " + cluster_full_version)
+        cluster = init_cluster(api, CLUSTER_NAME, CLUSTER_VERSION, CLUSTER_NODE_COUNT)
+    print("[INFO] Initialized cluster " + CLUSTER_NAME + " which uses CDH version " + CLUSTER_VERSION)
 
     #
     mgmt_servicename = "MGMT"
@@ -263,8 +251,7 @@ def main():
     print("[INFO] Deployed CM management service " + mgmt_servicename + " to run on " + CM_HOST)
 
     #
-    blueprint = assign_roles(api, cluster)
-    print(json.dumps(blueprint))
+    assign_roles(api, cluster)
     print("[INFO] all roles have assigned.")
 
     #
@@ -273,7 +260,7 @@ def main():
         cluster.auto_configure()
     except:
         pass
-    update_custom_config(api, cluster, blueprint)
+    update_custom_config(api, cluster)
     print("[INFO] all servies and roles have configured.")
     #
     cmd = cluster.first_run()
@@ -283,8 +270,7 @@ def main():
         print("[ERROR] The first run command failed: " + cmd.resultMessage())
     else:
         print("[INFO] First run successfully executed. Your cluster has been set up!")
-    #
-
+    
 
 if __name__ == "__main__":
     main()
